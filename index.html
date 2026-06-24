@@ -191,6 +191,8 @@ header .tag{font-family:var(--mono);font-size:10.5px;color:var(--grey);margin-le
 .nbtn.pri{background:var(--fg);color:#fff;border-color:var(--fg)}
 .nbtn:hover{background:var(--stone)}.nbtn.pri:hover{background:#000}
 .nmsg{font-size:12.5px;min-height:18px;font-weight:600}
+.dayhdr{font-family:var(--mono);font-size:11.5px;color:var(--fg);background:var(--stone);padding:6px 12px;margin:12px 0 5px;border-left:3px solid var(--fg);font-weight:700}
+.hcount b{color:var(--fg)}
 </style>
 </head>
 <body>
@@ -600,7 +602,7 @@ setView=function(v){
 // ===== Phase 3: 주문내역 Supabase 공유 (pos_orders) =====
 var _orders=[];
 async function fetchOrders(){var all=[],from=0,PG=1000;while(true){var r=await sb.from('pos_orders').select('*').order('created_at',{ascending:false}).range(from,from+PG-1);if(r.error)throw r.error;var d=r.data||[];all=all.concat(d);if(d.length<PG)break;from+=PG;}return all;}
-function _rowToOrder(o){return {no:o.order_no,date:(o.created_at||'').slice(0,10),time:(o.created_at||'').slice(11,16),cust:{n:o.cust_name,p:o.cust_phone,a:o.cust_addr,t:o.cust_note,m:o.cust_memo,pay:o.pay},items:o.items||[],disc:o.disc||0,total:o.total||0,email:o.created_email||''};}
+function _rowToOrder(o){var dt=o.created_at?new Date(o.created_at):null;return {no:o.order_no,date:dt?dt.toLocaleDateString('sv-SE'):'',time:dt?dt.toTimeString().slice(0,5):'',cust:{n:o.cust_name,p:o.cust_phone,a:o.cust_addr,t:o.cust_note,m:o.cust_memo,pay:o.pay},items:o.items||[],disc:o.disc||0,total:o.total||0,email:o.created_email||''};}
 ordByNo=function(no){return _orders.find(function(x){return x.no===no;});};
 saveOrder=async function(){
  var items=Object.values(cart);if(!items.length){alert('담긴 제품이 없습니다.');return;}
@@ -618,12 +620,18 @@ renderHistory=async function(){
  _orders=rows.map(_rowToOrder);var all=_orders;
  if(q)all=all.filter(function(o){return norm(o.no+(o.cust.n||'')+(o.cust.p||'')).includes(q);});
  var tot=all.reduce(function(s,o){return s+(o.total||0);},0);
- $('hcount').textContent=all.length+'건 · 합계 '+won(tot)+'원';
+ var today=new Date().toLocaleDateString('sv-SE');
+ var dayMap={};all.forEach(function(o){var k=o.date||'?';if(!dayMap[k])dayMap[k]={c:0,s:0};dayMap[k].c++;dayMap[k].s+=(o.total||0);});
+ var tc=dayMap[today]?dayMap[today].c:0,tsum=dayMap[today]?dayMap[today].s:0;
+ $('hcount').innerHTML='<b>오늘 '+tc+'건 · '+won(tsum)+'원</b>　·　전체 '+all.length+'건 '+won(tot)+'원';
  if(!all.length){$('hlist').innerHTML='<div class="empty">저장된 주문이 없습니다. 주문 담고 [주문저장] 하면 전 직원 공유됩니다.</div>';return;}
- $('hlist').innerHTML=all.map(function(o,i){
+ var out='',lastDate=null;
+ all.forEach(function(o,i){
+  if(o.date!==lastDate){lastDate=o.date;var dm=dayMap[o.date||'?'];out+='<div class="dayhdr">'+esc(o.date||'-')+(o.date===today?' (오늘)':'')+'　·　'+dm.c+'건　·　'+won(dm.s)+'원</div>';}
   var rws=o.items.map(function(it){return '<tr><td>'+esc(it.name)+'</td><td class="c">'+esc(it.color)+'</td><td class="c">'+esc(it.code)+'</td><td class="c">'+esc(it.ez||'')+'</td><td class="r">'+it.qty+'</td><td class="r">'+(it.service?'서비스':won(lineTotal(it)))+'</td></tr>';}).join('');
-  return '<div class="ord"><div class="ord-h" onclick="toggleOrd('+i+')"><div><span class="ono">'+esc(o.no)+'</span><span class="odate">'+esc(o.date)+' '+esc(o.time||'')+'</span></div><div class="ocust">'+esc(o.cust.n||'-')+(o.cust.p?' · '+esc(o.cust.p):'')+' · '+o.items.length+'품목 · '+esc(o.cust.pay||'')+(o.email?' · '+esc(o.email.split("@")[0]):'')+'</div><div class="otot mono">'+won(o.total)+'원</div></div><div class="ord-b" id="ordb'+i+'" style="display:none"><table class="otab"><thead><tr><th>품목명</th><th>색상</th><th>품목코드</th><th>이지</th><th class="r">수량</th><th class="r">금액</th></tr></thead><tbody>'+rws+'</tbody></table><div class="oinfo">배송지 '+esc(o.cust.a||'-')+(o.cust.t?'　·　비고: '+esc(o.cust.t):'')+(o.disc?'　·　추가할인 -'+won(o.disc)+'원':'')+'</div><div class="oacts"><button onclick="loadOrder(\''+esc(o.no)+'\')">불러오기</button><button onclick="printOrder(\''+esc(o.no)+'\')">인쇄</button><button onclick="csvOrder(\''+esc(o.no)+'\')">CSV</button><button class="del" onclick="delOrder(\''+esc(o.no)+'\')">삭제</button></div></div></div>';
- }).join('');};
+  out+='<div class="ord"><div class="ord-h" onclick="toggleOrd('+i+')"><div><span class="ono">'+esc(o.no)+'</span><span class="odate">'+esc(o.time||'')+'</span></div><div class="ocust">'+esc(o.cust.n||'-')+(o.cust.p?' · '+esc(o.cust.p):'')+' · '+o.items.length+'품목 · '+esc(o.cust.pay||'')+(o.email?' · '+esc(o.email.split("@")[0]):'')+'</div><div class="otot mono">'+won(o.total)+'원</div></div><div class="ord-b" id="ordb'+i+'" style="display:none"><table class="otab"><thead><tr><th>품목명</th><th>색상</th><th>품목코드</th><th>이지</th><th class="r">수량</th><th class="r">금액</th></tr></thead><tbody>'+rws+'</tbody></table><div class="oinfo">배송지 '+esc(o.cust.a||'-')+(o.cust.t?'　·　비고: '+esc(o.cust.t):'')+(o.disc?'　·　추가할인 -'+won(o.disc)+'원':'')+'</div><div class="oacts"><button onclick="loadOrder(\''+esc(o.no)+'\')">불러오기</button><button onclick="printOrder(\''+esc(o.no)+'\')">인쇄</button><button onclick="csvOrder(\''+esc(o.no)+'\')">CSV</button><button class="del" onclick="delOrder(\''+esc(o.no)+'\')">삭제</button></div></div></div>';
+ });
+ $('hlist').innerHTML=out;};
 exportAllCSV=async function(){
  var all;try{all=(await fetchOrders()).map(_rowToOrder);}catch(e){alert('불러오기 실패: '+(e.message||e));return;}
  if(!all.length){alert('저장된 주문이 없습니다.');return;}
@@ -633,12 +641,24 @@ exportAllCSV=async function(){
  all.forEach(function(o){(o.items||[]).forEach(function(it){lines.push([o.no,o.date,o.time,o.cust.n,o.cust.p,o.cust.pay,o.cust.a,String(o.cust.t||'').replace(/\r?\n/g,' / '),o.email,it.code,it.ez,it.name,it.color,it.qty,it.unit,it.rate||0,it.service?'Y':'',lineTotal(it)].map(qq).join(','));});});
  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='주문내역_공유_'+new Date().toLocaleDateString('ko-KR').replace(/[^\d]/g,'')+'.csv';a.click();};
+// ===== 전체 상품목록 CSV 다운로드 =====
+async function exportCatalog(){
+ var all=[],from=0,PG=1000;
+ try{while(true){var r=await sb.from('pos_skus').select('code,name,ez,price,note').order('code').range(from,from+PG-1);if(r.error)throw r.error;var d=r.data||[];all=all.concat(d);if(d.length<PG)break;from+=PG;}}catch(e){alert('불러오기 실패: '+(e.message||e));return;}
+ if(!all.length){alert('상품이 없습니다.');return;}
+ var head=['품목코드','품목명','이지어드민코드','가격','비고'];
+ var q=function(s){return '"'+String(s==null?'':s).replace(/"/g,'""')+'"';};
+ var lines=[head.join(',')];
+ all.forEach(function(r){lines.push([r.code,r.name,r.ez||'',(r.price==null?'':r.price),r.note||''].map(q).join(','));});
+ var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+ var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='COMMANINE_전체상품_'+new Date().toLocaleDateString('ko-KR').replace(/[^\d]/g,'')+'.csv';a.click();
+ alert('전체 상품 '+all.length+'개 CSV 다운로드');}
 
 // ===== 인증 게이트 =====
 async function afterLogin(session){showLogin(false);
  var email=((session&&session.user&&session.user.email)||'').toLowerCase();
  isAdmin=ADMIN_EMAILS.map(function(e){return e.toLowerCase();}).indexOf(email)>=0;
- ['editBtn','xlsBtn','navNew'].forEach(function(id){var el=_d(id);if(el)el.style.display=isAdmin?'':'none';});
+ ['editBtn','xlsBtn','navNew','catBtn'].forEach(function(id){var el=_d(id);if(el)el.style.display=isAdmin?'':'none';});
  await loadFromDB();}
 (async function(){
  var h=document.querySelector('header');if(h){var b=document.createElement('button');b.className='logoutb';b.textContent='로그아웃';b.onclick=doLogout;h.appendChild(b);}
@@ -646,7 +666,8 @@ async function afterLogin(session){showLogin(false);
  var tb=document.querySelector('.toolbar');
  if(tb){var eb=document.createElement('button');eb.id='editBtn';eb.className='xbtn';eb.textContent='가격수정 OFF';eb.style.display='none';eb.onclick=toggleEdit;eb.title='관리자: 카드 가격 직접 수정';tb.appendChild(eb);
   var ab=document.createElement('button');ab.id='applyBtn';ab.className='xbtn applb';ab.style.display='none';ab.onclick=applyPrices;tb.appendChild(ab);
-  var cb=document.createElement('button');cb.id='cancelBtn';cb.className='xbtn';cb.textContent='취소';cb.style.display='none';cb.onclick=cancelPrices;tb.appendChild(cb);}
+  var cb=document.createElement('button');cb.id='cancelBtn';cb.className='xbtn';cb.textContent='취소';cb.style.display='none';cb.onclick=cancelPrices;tb.appendChild(cb);
+  var ctb=document.createElement('button');ctb.id='catBtn';ctb.className='xbtn';ctb.textContent='⤓ 전체상품 CSV';ctb.style.display='none';ctb.onclick=exportCatalog;ctb.title='전체 상품목록 CSV 다운로드';tb.appendChild(ctb);}
  var src=document.getElementById('src');if(src){src.onclick=function(){loadFromDB();};src.title='클릭 시 DB에서 새로고침';}
  var wm=document.querySelector('header .wm');if(wm){wm.style.cursor='pointer';wm.title='홈으로';wm.onclick=function(){setView('order');var qq=document.getElementById('q');if(qq)qq.value='';if(typeof setCat==='function'&&typeof CATS!=='undefined')setCat(CATS[0]);else if(typeof renderGrid==='function')renderGrid();window.scrollTo(0,0);};}
  var s=await sb.auth.getSession();
