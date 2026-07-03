@@ -617,14 +617,23 @@ renderHistory=async function(){
  var ql=$('hq'),q=norm(ql?ql.value:'');
  $('hlist').innerHTML='<div class="empty">불러오는 중...</div>';
  var rows;try{rows=await fetchOrders();}catch(e){$('hlist').innerHTML='<div class="empty">불러오기 실패: '+(e.message||e)+'</div>';return;}
- _orders=rows.map(_rowToOrder);var all=_orders;
+ _orders=rows.map(_rowToOrder);
+ var months=Array.from(new Set(_orders.map(function(o){return (o.date||'').slice(0,7);}).filter(Boolean))).sort().reverse();
+ var thisM=new Date().toLocaleDateString('sv-SE').slice(0,7);
+ var msel=$('hmonth');
+ if(msel){var cur=msel.value;if(!cur||(cur!=='ALL'&&months.indexOf(cur)<0))cur=(months.indexOf(thisM)>=0?thisM:(months[0]||'ALL'));
+  msel.innerHTML='<option value="ALL">전체 기간</option>'+months.map(function(m){return '<option value="'+m+'">'+m+'</option>';}).join('');msel.value=cur;}
+ var selM=msel?msel.value:'ALL';
+ var all=_orders;
+ if(selM&&selM!=='ALL')all=all.filter(function(o){return (o.date||'').slice(0,7)===selM;});
  if(q)all=all.filter(function(o){return norm(o.no+(o.cust.n||'')+(o.cust.p||'')).includes(q);});
  var tot=all.reduce(function(s,o){return s+(o.total||0);},0);
  var today=new Date().toLocaleDateString('sv-SE');
  var dayMap={};all.forEach(function(o){var k=o.date||'?';if(!dayMap[k])dayMap[k]={c:0,s:0};dayMap[k].c++;dayMap[k].s+=(o.total||0);});
  var tc=dayMap[today]?dayMap[today].c:0,tsum=dayMap[today]?dayMap[today].s:0;
- $('hcount').innerHTML='<b>오늘 '+tc+'건 · '+won(tsum)+'원</b>　·　전체 '+all.length+'건 '+won(tot)+'원';
- if(!all.length){$('hlist').innerHTML='<div class="empty">저장된 주문이 없습니다. 주문 담고 [주문저장] 하면 전 직원 공유됩니다.</div>';return;}
+ var mlab=(selM==='ALL')?'전체 기간':selM;
+ $('hcount').innerHTML='<b>'+mlab+' · '+all.length+'건 · '+won(tot)+'원</b>'+(tc?'　·　오늘 '+tc+'건 '+won(tsum)+'원':'');
+ if(!all.length){$('hlist').innerHTML='<div class="empty">'+mlab+' 주문이 없습니다.</div>';return;}
  var out='',lastDate=null;
  all.forEach(function(o,i){
   if(o.date!==lastDate){lastDate=o.date;var dm=dayMap[o.date||'?'];out+='<div class="dayhdr">'+esc(o.date||'-')+(o.date===today?' (오늘)':'')+'　·　'+dm.c+'건　·　'+won(dm.s)+'원</div>';}
@@ -670,6 +679,8 @@ async function afterLogin(session){showLogin(false);
   var ctb=document.createElement('button');ctb.id='catBtn';ctb.className='xbtn';ctb.textContent='⤓ 전체상품 CSV';ctb.style.display='none';ctb.onclick=exportCatalog;ctb.title='전체 상품목록 CSV 다운로드';tb.appendChild(ctb);}
  var src=document.getElementById('src');if(src){src.onclick=function(){loadFromDB();};src.title='클릭 시 DB에서 새로고침';}
  var wm=document.querySelector('header .wm');if(wm){wm.style.cursor='pointer';wm.title='홈으로';wm.onclick=function(){setView('order');var qq=document.getElementById('q');if(qq)qq.value='';if(typeof setCat==='function'&&typeof CATS!=='undefined')setCat(CATS[0]);else if(typeof renderGrid==='function')renderGrid();window.scrollTo(0,0);};}
+ var htop=document.querySelector('#viewHistory .htop');
+ if(htop){var ms=document.createElement('select');ms.id='hmonth';ms.className='search';ms.style.maxWidth='140px';ms.title='월 선택';ms.onchange=renderHistory;var hq0=document.getElementById('hq');if(hq0&&hq0.nextSibling){htop.insertBefore(ms,hq0.nextSibling);}else{htop.appendChild(ms);}}
  var s=await sb.auth.getSession();
  if(s.data.session){await afterLogin(s.data.session);}else{showLogin(true);}
  sb.auth.onAuthStateChange(function(evt){if(evt==='SIGNED_OUT')showLogin(true);});
